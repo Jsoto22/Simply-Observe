@@ -1,7 +1,7 @@
 import Subscription from "./subscription";
 import { ObserverRef } from "./types";
 
-export function isAllCompleted(subs: Map<ObserverRef, Subscription<any>>) {
+export function isAllCompleted(subs: Map<ObserverRef, Subscription<unknown>>) {
     let isComplete = true;
     subs.forEach((v) => {
         if (!v.completed) isComplete = false;
@@ -17,20 +17,18 @@ export function isFullSet(stream: Map<ObserverRef, any>) {
     return isFullSet;
 }
 
-export function unsubscribeAll(subs: Map<ObserverRef, Subscription<any>>) {
-    subs.forEach((val, key) => {
+export function unsubscribeAll(subs: Map<ObserverRef, Subscription<unknown>>) {
+    subs.forEach((val) => {
         val.unsubscribe()
-        console.log('unsub from', key)
     })
 }
 
-export function closeAll(subs: Map<ObserverRef, Subscription<any>>) {
-    subs.forEach((val, key) => {
+export function closeAll(subs: Map<ObserverRef, Subscription<unknown>>) {
+    subs.forEach((val) => {
         val.close()
-        console.log('close from', key)
     })
 }
 
 export function mapToArray(stream: Map<ObserverRef, any>){
-    return Array.from(stream, ([_, v]) => { return v })
+    return Array.from(stream, (entry) => { return entry[1] })
 }

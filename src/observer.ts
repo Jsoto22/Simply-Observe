@@ -12,13 +12,13 @@ export interface Observer<T> {
 
 export interface ObserverConstructor {
     new <T extends any = never, R extends CatchUnknown<T> = CatchUnknown<T>>(context: ObserverTaskFunction<R>): Observer<R>
-    all<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> //forkJoin
-    some<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> //forkJoinStream?
-    zip<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> // zip
-    latest<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> // latest
-    sequent<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // concat
-    race<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // race
-    flat<T extends Observer<any>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // merge
+    all<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> //forkJoin
+    some<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> //forkJoinStream?
+    zip<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> // zip
+    latest<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> // latest
+    sequent<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // concat
+    race<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // race
+    flat<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // merge
 }
 
 export class ObserverLike<T> {
@@ -48,7 +48,7 @@ export class ObserverLike<T> {
         }
     }
 
-    protected _error = (value?: any) => {
+    protected _error = (value?: unknown) => {
         if (this._closed) return;
         for (let { error } of this.subscriptions.values()) {
             if (error || typeof error === 'function') {
@@ -91,9 +91,9 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @returns  An Observer that subscribes to all inner Observers
      */
     static all<T>(observers: Observer<T>[]): Observer<T[]> {
-        const stream = new Map<ObserverRef, any>();
+        const stream = new Map<ObserverRef, T|undefined>();
         const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<any[]>((next, error, complete) => {
+        const observer = new Observer<T[]>((next, error, complete) => {
             observers.map((obs) => {
                 stream.set(obs.ref, undefined)
                 let sub = obs.subscribe((val: T) => {
@@ -112,19 +112,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             })
         })
 
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer;
+        return this.override(observer, subs);
     }
 
     /**
@@ -137,7 +125,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @returns  An Observer that subscribes to all inner Observers
      */
     static some<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, any>();
+        const stream = new Map<ObserverRef, T|undefined>();
         const subs = new Map<ObserverRef, Subscription<T>>();
         const observer = new Observer<T[]>((next, error, complete) => {
             observers.map((obs) => {
@@ -156,19 +144,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             });
         });
 
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer;
+        return this.override(observer, subs);
     }
 
     /**
@@ -181,7 +157,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @returns  An Observer that subscribes to all inner Observers
      */
     static latest<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, any>();
+        const stream = new Map<ObserverRef, T|undefined>();
         const subs = new Map<ObserverRef, Subscription<T>>();
         const observer = new Observer<T[]>((next, error, complete) => {
             observers.map((obs) => {
@@ -200,19 +176,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             });
         });
 
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer;
+        return this.override(observer, subs);
     }
 
     /**
@@ -229,7 +193,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      */
 
     static sequent<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, any>();
+        const stream = new Map<ObserverRef, T>();
         const subs = new Map<ObserverRef, Subscription<T>>();
         const observer = new Observer<T>((next, error, complete) => {
             let i = 0;
@@ -242,7 +206,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
                     unsubscribeAll(subs);
                 }, () => {
                     subs.get(obs.ref)!.unsubscribe();
-                    next(stream.get(obs.ref));
+                    next(stream.get(obs.ref)!);
                     i++;
                     if (i < observers.length) mountNext();
                     if (isAllCompleted(subs)) complete();
@@ -253,19 +217,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             mountNext();
         });
 
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer;
+        return this.override(observer, subs);
     }
 
     /**
@@ -309,19 +261,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             })
         })
 
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer;
+        return this.override(observer, subs);
     }
 
     /**
@@ -350,19 +290,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             })
         })
 
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer;
+        return this.override(observer, subs);
     }
 
     /**
@@ -376,19 +304,19 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      */
 
     static zip<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, any>();
+        const stream = new Map<ObserverRef, T|undefined>();
         const subs = new Map<ObserverRef, Subscription<T>>();
         const observer = new Observer<T[]>((next, error, complete) => {
 
             const updateSet = () => {
                 next(mapToArray(stream));
                 subs.forEach((_, key) => {
-                    stream.set(key, null)
+                    stream.set(key, undefined)
                 });
             }
 
             observers.map((obs) => {
-                stream.set(obs.ref, null);
+                stream.set(obs.ref, undefined);
                 let sub = obs.subscribe((val: T) => {
                     if (isFullSet(stream)) updateSet();
                     stream.set(obs.ref, val);
@@ -403,6 +331,10 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             })
         })
 
+        return this.override(observer, subs);
+    }
+
+    private static override<T>(observer: Observer<T>,subs: Map<ObserverRef, Subscription<T>>) {
         observer._unsubscribe = (subscription: Subscription<T>) => {
             if (subscription.parent !== observer.ref) false;
             unsubscribeAll(subs);
@@ -415,7 +347,7 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
             closeAll(subs);
         }
 
-        return observer;
+        return observer
     }
 
     constructor(private task: ObserverTaskFunction<T>) {

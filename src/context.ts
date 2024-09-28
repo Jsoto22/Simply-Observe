@@ -13,8 +13,8 @@ export interface ObserverContextConstructor {
 
 export const ObserverContext: ObserverContextConstructor = class ObserverContext<T> implements ObserverContext<T> {
 
-    private _invoked: boolean = false
-    private _completed: boolean = false;
+    private _invoked = false
+    private _completed = false;
     private _task?: ObserverTaskFunction<T>;
     public get invoked() { return this._invoked }
     public readonly completed: boolean = this._completed;
