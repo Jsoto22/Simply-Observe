@@ -1,81 +1,30 @@
 import { Subscription } from "./subscription";
 import { ObserverContext } from "./context";
-import { ObserverRef, SubscriptionParameters, ObserverTaskFunction, NextHandler, ErrorHandler, CompleteHandler, CatchUnknown, extractType } from "./types";
-import { closeAll, isAllCompleted, isFullSet, mapToArray, unsubscribeAll } from "./utils";
+import { ObserverRef, SubscriptionParameters, ObserverTaskFunction, NextHandler, ErrorHandler, CompleteHandler, CatchUnknown, extractInputTuple } from "./types";
+import { isAllCompleted } from "./utils";
 
 export interface Observer<T> {
     readonly ref: ObserverRef
     get closed(): boolean
-    get completed(): boolean
     subscribe(...args: SubscriptionParameters<T>): Subscription<T>
 }
 
 export interface ObserverConstructor {
     new <T extends any = never, R extends CatchUnknown<T> = CatchUnknown<T>>(context: ObserverTaskFunction<R>): Observer<R>
-    all<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> //forkJoin
-    some<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> //forkJoinStream?
-    zip<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> // zip
-    latest<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R[]> // latest
-    sequent<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // concat
-    race<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // race
-    flat<T extends Observer<unknown>[], R extends extractType<T>>(observers: Observer<R>[]): Observer<R> // merge
+    all<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T> //forkJoin
+    partial<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T> //forkJoinStream?
+    zip<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T> // zip
+    latest<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T> // latest
+    sequent<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T[number]> // concat
+    race<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T[number]> // race
+    flat<T extends readonly unknown[]>(observers: extractInputTuple<T>): Observer<T[number]> // merge
 }
 
 export class ObserverLike<T> {
     readonly ref = crypto.randomUUID()
-    protected subscriptions = new Map<Subscription<T>, { next: NextHandler<T>, error?: ErrorHandler, complete?: CompleteHandler<T> }>();
-    protected _closed: boolean = false;
-    protected _completed: boolean = false;
-
-    get closed() {
-        return this._closed
-    }
-
-    get completed() {
-        return this._completed
-    }
-
-    protected _isCompleted = () => {
-        return this._completed
-    }
-
-    protected _update = (value?: T) => {
-        if (this._closed) return;
-        for (let { next } of this.subscriptions.values()) {
-            if (next || typeof next === 'function') {
-                next(value!);
-            }
-        }
-    }
-
-    protected _error = (value?: unknown) => {
-        if (this._closed) return;
-        for (let { error } of this.subscriptions.values()) {
-            if (error || typeof error === 'function') {
-                error(value);
-                this._close();
-            }
-        }
-    }
-
-    protected _complete = (final?: T) => {
-        if (this._closed) return;
-        this._completed = true;
-        for (let { complete } of this.subscriptions.values()) {
-            if (complete || typeof complete === 'function') {
-                complete(final);
-            }
-        }
-    }
-
-    protected _close = () => {
-        if (this._closed) return;
-        this._closed = true;
-    }
-
-    protected _unsubscribe = (subscription: Subscription<T>) => {
-        if (subscription.parent !== this.ref) false;
-        return this.subscriptions.delete(subscription);
+    protected _context: ObserverContext<T> = new ObserverContext<T>();
+    public get closed() {
+        return !this._context.active
     }
 }
 
@@ -90,93 +39,133 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @param observers Observer array
      * @returns  An Observer that subscribes to all inner Observers
      */
-    static all<T>(observers: Observer<T>[]): Observer<T[]> {
-        const stream = new Map<ObserverRef, T|undefined>();
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T[]>((next, error, complete) => {
-            observers.map((obs) => {
-                stream.set(obs.ref, undefined)
-                let sub = obs.subscribe((val: T) => {
-                    stream.set(obs.ref, val);
+    static all<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T> {
+
+        const task: ObserverTaskFunction<T> = (next, error, complete) => {
+            if (observers.length === 0) {
+                next([] as unknown as T);
+                complete();
+                return () => { };
+            }
+
+            const root = new Subscription();
+            const stream: unknown[] = Array(observers.length);
+            const completed: boolean[] = Array(observers.length).fill(false);
+
+            observers.forEach((obs, i) => {
+                const sub = obs.subscribe((val) => {
+                    stream[i] = val;
                 }, (err) => {
+                    root.unsubscribe();
                     error(err);
-                    unsubscribeAll(subs);
                 }, () => {
-                    subs.get(obs.ref)!.unsubscribe();
-                    if (isAllCompleted(subs)) {
-                        next(mapToArray(stream));
+                    completed[i] = true;
+                    if (isAllCompleted(completed)) {
+                        root.unsubscribe();
+                        next([...stream] as unknown as T);
+                        complete();
+                    }
+                });
+                root.add(sub);
+            });
+
+            return () => root.unsubscribe();
+        };
+
+        return new Observer<T>(task);
+    }
+
+    /**
+     * Returns an Observer that emits an array containing the\
+     * emmited values of all inner Observers, as they are completed,\
+     * in the order of the Observer array given. This streams all\
+     * inner Observer's latest values as they are individualy completed.
+     * 
+     * @param observers Observer array
+     * @returns  An Observer that subscribes to all inner Observers
+     */
+    static partial<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T> {
+
+        const task: ObserverTaskFunction<T> = (next, error, complete) => {
+            if (observers.length === 0) {
+                complete();
+                return () => { };
+            }
+
+            const root = new Subscription();
+            const stream: unknown[] = Array(observers.length);
+            const completed: boolean[] = Array(observers.length).fill(false);
+
+            observers.map((obs, i) => {
+                const sub = obs.subscribe((val) => {
+                    stream[i] = val;
+                }, (err) => {
+                    root.unsubscribe();
+                    error(err);
+                }, () => {
+                    completed[i] = true;
+                    next([...stream] as unknown as T);
+                    if (isAllCompleted(completed)) {
+                        root.unsubscribe();
                         complete();
                     };
                 });
-                subs.set(obs.ref, sub);
+                root.add(sub)
             })
-        })
+            return () => root.unsubscribe();
+        };
 
-        return this.override(observer, subs);
+        return new Observer<T>(task);
     }
 
     /**
      * Returns an Observer that emits an array containing the\
-     * emmited values of all inner Observers, as they are completed,\
-     * in the order of the Observer array given. This streams all\
-     * inner Observer's latest values as they are individualy completed.
+     * emmited values of all inner Observers. This streams all\
+     * inner Observer's latest values as they are individualy emmited.
      * 
      * @param observers Observer array
      * @returns  An Observer that subscribes to all inner Observers
      */
-    static some<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, T|undefined>();
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T[]>((next, error, complete) => {
-            observers.map((obs) => {
-                stream.set(obs.ref, undefined);
-                let sub = obs.subscribe((val: T) => {
-                    stream.set(obs.ref, val);
+    static latest<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T> {
+
+        const task: ObserverTaskFunction<T> = (next, error, complete) => {
+            if (observers.length === 0) {
+                next([] as unknown as T);
+                complete();
+                return () => { };
+            }
+
+            const root = new Subscription();
+            const stream: unknown[] = Array(observers.length);
+            const completed: boolean[] = Array(observers.length).fill(false);
+
+            observers.forEach((obs, i) => {
+                const sub = obs.subscribe((val) => {
+                    stream[i] = val;
+                    next([...stream] as unknown as T);
                 }, (err) => {
+                    root.unsubscribe();
                     error(err);
-                    unsubscribeAll(subs);
                 }, () => {
-                    next(mapToArray(stream))
-                    subs.get(obs.ref)!.unsubscribe();
-                    if (isAllCompleted(subs)) complete();
+                    completed[i] = true;
+                    if (isAllCompleted(completed)) {
+                        root.unsubscribe();
+                        complete();
+                    }
                 });
-                subs.set(obs.ref, sub);
+                root.add(sub);
             });
-        });
 
-        return this.override(observer, subs);
-    }
+            return () => root.unsubscribe();
+        };
 
-    /**
-     * Returns an Observer that emits an array containing the\
-     * emmited values of all inner Observers, as they are completed,\
-     * in the order of the Observer array given. This streams all\
-     * inner Observer's latest values as they are individualy completed.
-     * 
-     * @param observers Observer array
-     * @returns  An Observer that subscribes to all inner Observers
-     */
-    static latest<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, T|undefined>();
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T[]>((next, error, complete) => {
-            observers.map((obs) => {
-                stream.set(obs.ref, undefined);
-                let sub = obs.subscribe((val: T) => {
-                    stream.set(obs.ref, val);
-                    next(mapToArray(stream));
-                }, (err) => {
-                    error(err);
-                    unsubscribeAll(subs);
-                }, () => {
-                    subs.get(obs.ref)!.unsubscribe();
-                    if (isAllCompleted(subs)) complete();
-                });
-                subs.set(obs.ref, sub);
-            });
-        });
-
-        return this.override(observer, subs);
+        return new Observer<T>(task);
     }
 
     /**
@@ -192,32 +181,46 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @returns  An Observer that subscribes to all inner Observers
      */
 
-    static sequent<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, T>();
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T>((next, error, complete) => {
-            let i = 0;
-            const mountNext = () => {
-                let obs = observers[i];
-                let sub = obs.subscribe((val: T) => {
-                    stream.set(obs.ref, val);
-                }, (err) => {
-                    error(err);
-                    unsubscribeAll(subs);
-                }, () => {
-                    subs.get(obs.ref)!.unsubscribe();
-                    next(stream.get(obs.ref)!);
-                    i++;
-                    if (i < observers.length) mountNext();
-                    if (isAllCompleted(subs)) complete();
-                });
-                subs.set(obs.ref, sub);
+    static sequent<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T[number]> {
+
+        const task: ObserverTaskFunction<T[number]> = (next, error, complete) => {
+            if (observers.length === 0) {
+                complete();
+                return () => { };
             }
 
-            mountNext();
-        });
+            const root = new Subscription();
+            const queue = [...observers];
 
-        return this.override(observer, subs);
+            const mountNext = () => {
+                let value: T[number];
+                let obs = queue.shift();
+
+                if (!obs) {
+                    root.unsubscribe();
+                    complete();
+                    return;
+                }
+
+                const sub = obs.subscribe((val) => {
+                    value = val;
+                }, (err) => {
+                    root.unsubscribe();
+                    error(err);
+                }, () => {
+                    next(value);
+                    mountNext();
+                });
+                root.add(sub);
+            };
+
+            mountNext();
+            return () => root.unsubscribe();
+        };
+
+        return new Observer<T[number]>(task);
     }
 
     /**
@@ -228,40 +231,41 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @returns  An Observer that subscribes to all inner Observers
      */
 
-    static race<T>(observers: Observer<T>[]) {
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T>((next, error, complete) => {
+    static race<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T[number]> {
 
-            const setFocus = (ref: ObserverRef) => {
-                focus = ref;
-                subs.forEach((val, key) => {
-                    if (key !== ref) val.unsubscribe();
-                });
+        const task: ObserverTaskFunction<T[number]> = (next, error, complete) => {
+            if (observers.length === 0) {
+                complete();
+                return () => { };
             }
 
-            let focus: string;
+            const root = new Subscription();
+            let won = false;
 
-            observers.map((obs) => {
-                let sub = obs.subscribe((val: T) => {
-                    if (!focus) setFocus(obs.ref);
-                    if (focus !== obs.ref) return;
+            observers.forEach((obs) => {
+                const sub = obs.subscribe((val) => {
+                    if (won) return;
+                    won = true;
+                    root.unsubscribe();
                     next(val);
-                }, (err) => {
-                    if (!focus) setFocus(obs.ref);
-                    if (focus !== obs.ref) return;
-                    error(err);
-                    unsubscribeAll(subs);
-                }, () => {
-                    if (!focus) setFocus(obs.ref);
-                    if (focus !== obs.ref) return;
-                    subs.get(obs.ref)!.unsubscribe();
                     complete();
-                })
-                subs.set(obs.ref, sub);
-            })
-        })
+                }, (err) => {
+                    if (won) return;
+                    won = true;
+                    root.unsubscribe();
+                    error(err);
+                }, () => {
+                    // a source completing with no emission doesn't win
+                });
+                root.add(sub);
+            });
 
-        return this.override(observer, subs);
+            return () => root.unsubscribe();
+        };
+
+        return new Observer<T[number]>(task);
     }
 
     /**
@@ -272,25 +276,39 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @returns  An Observer that subscribes to all inner Observers
      */
 
-    static flat<T>(observers: Observer<T>[]) {
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T>((next, error, complete) => {
+    static flat<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T[number]> {
 
-            observers.map((obs) => {
-                let sub = obs.subscribe((val: T) => {
+        const task: ObserverTaskFunction<T[number]> = (next, error, complete) => {
+            if (observers.length === 0) {
+                complete();
+                return () => { };
+            }
+
+            const root = new Subscription();
+            const completed: boolean[] = Array(observers.length).fill(false);
+
+            observers.forEach((obs, i) => {
+                const sub = obs.subscribe((val) => {
                     next(val);
                 }, (err) => {
+                    root.unsubscribe();
                     error(err);
-                    unsubscribeAll(subs);
                 }, () => {
-                    subs.get(obs.ref)!.unsubscribe();
-                    if (isAllCompleted(subs)) complete();
-                })
-                subs.set(obs.ref, sub);
-            })
-        })
+                    completed[i] = true;
+                    if (isAllCompleted(completed)) {
+                        root.unsubscribe();
+                        complete();
+                    }
+                });
+                root.add(sub);
+            });
 
-        return this.override(observer, subs);
+            return () => root.unsubscribe();
+        };
+
+        return new Observer<T[number]>(task);
     }
 
     /**
@@ -302,71 +320,62 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
      * @param observers Observer array
      * @returns  An Observer that subscribes to all inner Observers
      */
+    static zip<T extends readonly unknown[]>(
+        observers: extractInputTuple<T>
+    ): Observer<T> {
 
-    static zip<T>(observers: Observer<T>[]) {
-        const stream = new Map<ObserverRef, T|undefined>();
-        const subs = new Map<ObserverRef, Subscription<T>>();
-        const observer = new Observer<T[]>((next, error, complete) => {
-
-            const updateSet = () => {
-                next(mapToArray(stream));
-                subs.forEach((_, key) => {
-                    stream.set(key, undefined)
-                });
+        const task: ObserverTaskFunction<T> = (next, error, complete) => {
+            if (observers.length === 0) {
+                next([] as unknown as T);
+                complete();
+                return () => { };
             }
 
-            observers.map((obs) => {
-                stream.set(obs.ref, undefined);
-                let sub = obs.subscribe((val: T) => {
-                    if (isFullSet(stream)) updateSet();
-                    stream.set(obs.ref, val);
+            const root = new Subscription();
+            const streams: unknown[][] = observers.map(() => []);
+            const completed: boolean[] = Array(observers.length).fill(false);
+
+            const checkReady = () => {
+                const min = Math.min(...streams.map((s) => s.length));
+                if (min > 0) {
+                    next(streams.map((stream) => stream.shift()) as unknown as T);
+                }
+            };
+
+            observers.forEach((obs, i) => {
+                const sub = obs.subscribe((val) => {
+                    streams[i].push(val);
+                    checkReady();
                 }, (err) => {
+                    root.unsubscribe();
                     error(err);
-                    unsubscribeAll(subs);
                 }, () => {
-                    subs.get(obs.ref)!.unsubscribe();
-                    if (isAllCompleted(subs)) complete();
-                })
-                subs.set(obs.ref, sub);
-            })
-        })
+                    completed[i] = true;
+                    if (isAllCompleted(completed)) {
+                        root.unsubscribe();
+                        complete();
+                    }
+                });
+                root.add(sub);
+            });
 
-        return this.override(observer, subs);
-    }
+            return () => root.unsubscribe();
+        };
 
-    private static override<T>(observer: Observer<T>,subs: Map<ObserverRef, Subscription<T>>) {
-        observer._unsubscribe = (subscription: Subscription<T>) => {
-            if (subscription.parent !== observer.ref) false;
-            unsubscribeAll(subs);
-            return observer.subscriptions.delete(subscription);
-        }
-
-        observer._close = () => {
-            if (observer._closed) return;
-            observer._closed = true;
-            closeAll(subs);
-        }
-
-        return observer
+        return new Observer<T>(task);
     }
 
     constructor(private task: ObserverTaskFunction<T>) {
         super();
-        this.task = task;
     }
 
-    private context: ObserverContext<T> = new ObserverContext<T>(this._update, this._error, this._complete);
-
     public subscribe(next: NextHandler<T>, error?: ErrorHandler, complete?: CompleteHandler<T>) {
-
-        if (!this.context.invoked) this.context.invoke(this.task);
-
-        const subscription = new Subscription<T>(this.ref, this._unsubscribe, this._isCompleted, this._close);
-        this.subscriptions.set(subscription, { next, error, complete });
-
-        return subscription;
+        if (!this._context.active) this._context = new ObserverContext();
+        const teardownAdd = this._context.add({ next, error, complete });
+        if (!this._context.invoked) this._context.invoke(this.task);
+        return new Subscription(teardownAdd);
     }
 }
 
 export * from "./types"
-export default { Observer, ObserverContext }
+export default { Observer }

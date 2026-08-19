@@ -1,31 +1,85 @@
-import { ObserverRef, ObserverTaskFunction, ObserverTaskParameters, UpdateDispatcher, ErrorDispatcher, CompleteDispatcher } from "./types"
+import { ObserverTaskFunction, SubscriptionHandlers } from "./types"
 
 export interface ObserverContext<T> {
-    invoked: boolean
-    readonly completed: boolean
-    readonly ref: ObserverRef
+    add(subscriber: SubscriptionHandlers<T>): () => boolean
     invoke(task: ObserverTaskFunction<T>): void
+    update(value?: T): void
+    error(value?: unknown): void
+    complete(final?: T): void
+    close(): void
+    active: boolean
+    invoked: boolean
 }
 
 export interface ObserverContextConstructor {
-    new <T>(...args: ObserverTaskParameters<T>): ObserverContext<T>
+    new <T>(): ObserverContext<T>
 }
 
 export const ObserverContext: ObserverContextConstructor = class ObserverContext<T> implements ObserverContext<T> {
 
     private _invoked = false
-    private _completed = false;
-    private _task?: ObserverTaskFunction<T>;
+    private _closed = false;
+    private _teardown?: Function;
+    private _subscribers = new Set<SubscriptionHandlers<T>>();
+    public get active() { return !this._closed }
     public get invoked() { return this._invoked }
-    public readonly completed: boolean = this._completed;
-    public readonly ref = crypto.randomUUID()
 
-    constructor(private update: UpdateDispatcher<T>, private error: ErrorDispatcher, private complete: CompleteDispatcher<T>) { }
+    constructor() { }
 
-    public invoke(task: ObserverTaskFunction<T>) {
+
+    public add = (subscriber: SubscriptionHandlers<T>) => {
+        this._subscribers.add(subscriber)
+        return () => {
+            this._subscribers.delete(subscriber)
+            if (this._subscribers.size === 0) {
+                this.close();
+            }
+            return true;
+        }
+    }
+
+    public invoke = (task: ObserverTaskFunction<T>) => {
         this._invoked = true;
-        this._task = task
-        this._task(this.update, this.error, this.complete)
+        this._teardown = task(this.update, this.error, this.complete)
+    }
+
+    public close = () => {
+        if (!this.active) return;
+        this._closed = true;
+        this._subscribers.clear()
+        if (this._teardown && typeof this._teardown === 'function') {
+            this._teardown();
+        }
+    }
+
+    public update = (value?: T) => {
+        if (!this.active) return;
+        for (let { next } of this._subscribers.values()) {
+            if (next || typeof next === 'function') {
+                next(value!);
+            }
+        }
+    }
+
+    public error = (value?: unknown) => {
+        if (!this.active) return;
+        for (let { error } of this._subscribers.values()) {
+            if (error || typeof error === 'function') {
+                error(value);
+
+            }
+        }
+        this.close();
+    }
+
+    public complete = (final?: T) => {
+        if (!this.active) return;
+        for (let { complete } of this._subscribers.values()) {
+            if (complete || typeof complete === 'function') {
+                complete(final);
+            }
+        }
+        this.close();
     }
 }
 
