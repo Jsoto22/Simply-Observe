@@ -21,6 +21,7 @@ export type CloseHandler = () => void
 export type IsAny<T> = 0 extends 1 & T ? true : false;
 export type CatchUnknown<T> = IsAny<T> extends true ? any : unknown extends T ? never : T;
 export type extractType<T> = T extends Observer<infer U>[] ? U : never
+export type extractInputTuple<T> = { [K in keyof T]: Observer<T[K]> }
 
 
 

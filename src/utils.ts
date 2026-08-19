@@ -1,34 +1,18 @@
-import Subscription from "./subscription";
-import { ObserverRef } from "./types";
+import { CatchUnknown, Observer } from "./observer";
 
-export function isAllCompleted(subs: Map<ObserverRef, Subscription<unknown>>) {
-    let isComplete = true;
-    subs.forEach((v) => {
-        if (!v.completed) isComplete = false;
-    })
-    return isComplete;
-}
-
-export function isFullSet(stream: Map<ObserverRef, any>) {
-    let isFullSet = true;
-    stream.forEach((val) => {
-        if (!val) isFullSet = false;
-    })
-    return isFullSet;
-}
-
-export function unsubscribeAll(subs: Map<ObserverRef, Subscription<unknown>>) {
-    subs.forEach((val) => {
-        val.unsubscribe()
+export function of(value?: undefined): Observer<undefined>
+export function of(value: null): Observer<null>
+export function of<T>(...args: CatchUnknown<T>[]): Observer<T>
+export function of<T>(...args: CatchUnknown<T>[]) {
+    return new Observer<T>((next, _, complete) => {
+        for (let item of args) {
+            next(item)
+        }
+        complete()
     })
 }
 
-export function closeAll(subs: Map<ObserverRef, Subscription<unknown>>) {
-    subs.forEach((val) => {
-        val.close()
-    })
-}
 
-export function mapToArray(stream: Map<ObserverRef, any>){
-    return Array.from(stream, (entry) => { return entry[1] })
+export const isAllCompleted = (completed: boolean[]) => {
+    return !completed.includes(false)
 }
