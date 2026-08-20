@@ -7,7 +7,7 @@ export interface Subject<T> extends Observer<T> {
     next(value: T): void
     error(value: any): void
     complete(): void
-    close(): void
+    asObservable(): Observer<T>
 }
 
 export interface SubjectConstructor {
@@ -48,13 +48,23 @@ export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike
         this._context.close();
     }
 
+    public asObservable(): Observer<T> {
+        return new Observer<T>((next, error, complete) => {
+            const sub = this.subscribe(next as NextHandler<T>, error, complete as CompleteHandler<T>);
+            return () => sub.unsubscribe();
+        });
+    }
+
     public subscribe(next: NextHandler<T>, error?: ErrorHandler, complete?: CompleteHandler<T>) {
         if (this.terminal) {
             if (this.terminal.type === 'error') error?.(this.terminal.value);
             else complete?.(this.terminal.value);
             return new Subscription<T>(() => true);
         }
-        return new Subscription<T>(this._context.add({ next, error, complete }));
+
+        const sub = new Subscription(this._context.add({ next, error, complete }));
+        next(this.value);
+        return sub;
     }
 }
 
