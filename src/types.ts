@@ -23,7 +23,15 @@ export type CatchUnknown<T> = IsAny<T> extends true ? any : unknown extends T ? 
 export type extractType<T> = T extends Observer<infer U>[] ? U : never
 export type extractInputTuple<T> = { [K in keyof T]: Observer<T[K]> }
 
-
+export type OperatorFunction<T, R> = (source: Observer<T>) => Observer<R>;
+export type PipeResult<T, U extends OperatorFunction<any, any>[]> =
+    U extends [infer First, ...infer Rest]
+    ? First extends OperatorFunction<T, infer R>
+    ? Rest extends OperatorFunction<any, any>[]
+    ? PipeResult<R, Rest>
+    : R
+    : never
+    : T;
 
 
 

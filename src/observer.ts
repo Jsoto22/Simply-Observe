@@ -1,10 +1,11 @@
 import { Subscription } from "./subscription";
 import { ObserverContext } from "./context";
-import { ObserverRef, SubscriptionParameters, ObserverTaskFunction, NextHandler, ErrorHandler, CompleteHandler, CatchUnknown, extractInputTuple } from "./types";
+import { ObserverRef, SubscriptionParameters, ObserverTaskFunction, NextHandler, ErrorHandler, CompleteHandler, CatchUnknown, extractInputTuple, OperatorFunction, PipeResult } from "./types";
 import { isAllCompleted } from "./utils";
 
 export interface Observer<T> {
     readonly ref: ObserverRef
+    close(): void
     get closed(): boolean
     subscribe(...args: SubscriptionParameters<T>): Subscription<T>
 }
@@ -206,11 +207,11 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
 
                 const sub = obs.subscribe((val) => {
                     value = val;
+                    next(value);
                 }, (err) => {
                     root.unsubscribe();
                     error(err);
                 }, () => {
-                    next(value);
                     mountNext();
                 });
                 root.add(sub);
@@ -369,11 +370,24 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
         super();
     }
 
+    public close() {
+        if (!this._context.active) return;
+        this._context.close();
+    }
+
+    public pipe<R extends OperatorFunction<any, any>[]>(...operators: R): Observer<PipeResult<T, R>> {
+        let result: any = this;
+        for (const op of operators) {
+            result = op(result);
+        }
+        return result;
+    }
+
     public subscribe(next: NextHandler<T>, error?: ErrorHandler, complete?: CompleteHandler<T>) {
         if (!this._context.active) this._context = new ObserverContext();
-        const teardownAdd = this._context.add({ next, error, complete });
+        const teardown = this._context.add({ next, error, complete });
         if (!this._context.invoked) this._context.invoke(this.task);
-        return new Subscription(teardownAdd);
+        return new Subscription(teardown);
     }
 }
 
