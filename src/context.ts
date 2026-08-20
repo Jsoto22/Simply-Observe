@@ -26,6 +26,12 @@ export const ObserverContext: ObserverContextConstructor = class ObserverContext
 
     constructor() { }
 
+    private finalize() {
+        if (this._teardown && typeof this._teardown === 'function') {
+            this._teardown();
+        }
+    }
+
 
     public add = (subscriber: SubscriptionHandlers<T>) => {
         this._subscribers.add(subscriber)
@@ -46,40 +52,47 @@ export const ObserverContext: ObserverContextConstructor = class ObserverContext
     public close = () => {
         if (!this.active) return;
         this._closed = true;
-        this._subscribers.clear()
-        if (this._teardown && typeof this._teardown === 'function') {
-            this._teardown();
-        }
+        this._subscribers.clear();
+        this.finalize();
     }
 
     public update = (value?: T) => {
         if (!this.active) return;
         for (let { next } of this._subscribers.values()) {
             if (next || typeof next === 'function') {
-                next(value!);
+                try {
+                    next(value!);
+                } catch (error) {
+                    this.error(error)
+                }
             }
         }
     }
 
     public error = (value?: unknown) => {
         if (!this.active) return;
-        for (let { error } of this._subscribers.values()) {
+        this._closed = true;                    // mark closed FIRST
+        const subscribers = [...this._subscribers.values()];  // snapshot before clearing
+        this._subscribers.clear();
+        for (let { error } of subscribers) {
             if (error || typeof error === 'function') {
                 error(value);
-
             }
         }
-        this.close();
+        this.finalize();
     }
 
     public complete = (final?: T) => {
         if (!this.active) return;
-        for (let { complete } of this._subscribers.values()) {
+        this._closed = true;
+        const subscribers = [...this._subscribers.values()];
+        this._subscribers.clear();
+        for (let { complete } of subscribers) {
             if (complete || typeof complete === 'function') {
                 complete(final);
             }
         }
-        this.close();
+        this.finalize();
     }
 }
 
