@@ -44,5 +44,4 @@ export const Observer: ObserverConstructor = class Observer<T> extends ObserverL
     }
 }
 
-export * from "./types"
 export default { Observer }

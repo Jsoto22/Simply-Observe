@@ -1,6 +1,6 @@
-import { Flat, Observer, Pop } from "./observer";
+import { Observer } from "./observer";
 import Subscription from "./subscription";
-import { CatchUnknown, CompleteHandler, NextHandler } from "./types";
+import { CatchUnknown, CompleteHandler, Flat, NextHandler, Pop } from "./types";
 
 export type OperatorFunction<T, R> = (source: Observer<T>) => Observer<R>;
 

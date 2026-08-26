@@ -1,4 +1,4 @@
-import { extractUnknown, ObserverRef, SubscriptionFunction, SubscriptionParameters } from "./types"
+import { ObserverRef, SubscriptionFunction } from "./types"
 
 export interface Subscription<T> {
     ref: ObserverRef

@@ -1,7 +1,7 @@
 
 import { Observer, ObserverLike } from "./observer";
 import { Subscribable, Subscription } from "./subscription";
-import { CatchUnknown, CompleteHandler, ErrorHandler, NextHandler } from "./types";
+import { CompleteHandler, ErrorHandler, NextHandler } from "./types";
 
 export interface Subject<T> extends Subscribable<T> {
     close(): void

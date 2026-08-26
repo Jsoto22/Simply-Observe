@@ -1,5 +1,6 @@
-import { CatchUnknown, extractInputTuple, Observer, ObserverTaskFunction } from "./observer";
+import { Observer } from "./observer";
 import Subscription from "./subscription";
+import { CatchUnknown, extractInputTuple, ObserverTaskFunction } from "./types";
 
 export function of(value?: undefined): Observer<undefined>
 export function of(value: null): Observer<null>
