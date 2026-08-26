@@ -32,8 +32,7 @@ export const ObserverContext: ObserverContextConstructor = class ObserverContext
         }
     }
 
-
-    public add = (subscriber: SubscriptionHandlers<T>) => {
+    public add(subscriber: SubscriptionHandlers<T>) {
         this._subscribers.add(subscriber)
         return () => {
             this._subscribers.delete(subscriber)
@@ -44,12 +43,12 @@ export const ObserverContext: ObserverContextConstructor = class ObserverContext
         }
     }
 
-    public invoke = (task: ObserverTaskFunction<T>) => {
+    public invoke(task: ObserverTaskFunction<T>) {
         this._invoked = true;
         this._teardown = task(this.update, this.error, this.complete)
     }
 
-    public close = () => {
+    public close() {
         if (!this.active) return;
         this._closed = true;
         this._subscribers.clear();
@@ -71,8 +70,8 @@ export const ObserverContext: ObserverContextConstructor = class ObserverContext
 
     public error = (value?: unknown) => {
         if (!this.active) return;
-        this._closed = true;                    // mark closed FIRST
-        const subscribers = [...this._subscribers.values()];  // snapshot before clearing
+        this._closed = true;
+        const subscribers = [...this._subscribers.values()];
         this._subscribers.clear();
         for (let { error } of subscribers) {
             if (error || typeof error === 'function') {
@@ -96,4 +95,4 @@ export const ObserverContext: ObserverContextConstructor = class ObserverContext
     }
 }
 
-export default ObserverContext
+export default { ObserverContext }

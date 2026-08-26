@@ -1,25 +1,26 @@
 
 import { Observer, ObserverLike } from "./observer";
-import { Subscription } from "./subscription";
+import { Subscribable, Subscription } from "./subscription";
 import { CatchUnknown, CompleteHandler, ErrorHandler, NextHandler } from "./types";
 
-export interface Subject<T> extends Observer<T> {
+export interface Subject<T> extends Subscribable<T> {
+    close(): void
     next(value: T): void
     error(value: any): void
-    complete(): void
+    complete(final?: T): void
     asObservable(): Observer<T>
 }
 
 export interface SubjectConstructor {
-    new <T extends any = never, R extends CatchUnknown<T> = CatchUnknown<T>>(initial: R): Subject<R>
+    new <T extends any = never>(initial?: T): Subject<T>
 }
 
 export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike<T> implements Subject<T> {
 
-    private value: T;
+    private value?: T;
     private terminal?: { type: 'error'; value: any } | { type: 'complete'; value?: T };
 
-    constructor(initial: T) {
+    constructor(initial?: T) {
         super()
         this.value = initial
     }
@@ -50,7 +51,7 @@ export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike
 
     public asObservable(): Observer<T> {
         return new Observer<T>((next, error, complete) => {
-            const sub = this.subscribe(next as NextHandler<T>, error, complete as CompleteHandler<T>);
+            const sub = this.subscribe(next, error, complete);
             return () => sub.unsubscribe();
         });
     }
@@ -62,8 +63,8 @@ export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike
             return new Subscription<T>(() => true);
         }
 
-        const sub = new Subscription(this._context.add({ next, error, complete }));
-        next(this.value);
+        const sub = new Subscription<T>(this._context.add({ next, error, complete }));
+        if (this.value !== undefined) next(this.value);
         return sub;
     }
 }
