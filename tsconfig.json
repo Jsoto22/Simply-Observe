@@ -14,7 +14,11 @@
     "allowJs": false,
     "declaration": true,
     "moduleResolution": "nodenext",
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "types": [
+      "node",
+      "jest",
+    ]
   },
   "include": [
     "src"
