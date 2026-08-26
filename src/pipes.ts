@@ -173,8 +173,8 @@ export interface Pipeable<T> {
     pipe<A, B, C, D>(...args: OpArgs<T, [A, B, C, D]>): Observer<D>;
     pipe<A, B, C, D, E>(...args: OpArgs<T, [A, B, C, D, E]>): Observer<E>;
     pipe<A, B, C, D, E, F>(...args: OpArgs<T, [A, B, C, D, E, F]>): Observer<F>;
-    pipe<A, B, C, D, E, F, G>(...args: OpArgs<T, [A, B, C, D, F, G]>): Observer<G>;
-    pipe<A, B, C, D, E, F, G, H>(...args: OpArgs<T, [A, B, C, D, F, G, H]>): Observer<H>;
+    pipe<A, B, C, D, E, F, G>(...args: OpArgs<T, [A, B, C, D, E, F, G]>): Observer<G>;
+    pipe<A, B, C, D, E, F, G, H>(...args: OpArgs<T, [A, B, C, D, E, F, G, H]>): Observer<H>;
     pipe<A, B, C, D, E, F, G, H, I>(...args: OpArgs<T, [A, B, C, D, E, F, G, H, I]>): Observer<I>;
     pipe<A, B, C, D, E, F, G, H, I>(
         op1: OperatorFunction<T, A>,
