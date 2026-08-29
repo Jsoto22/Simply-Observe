@@ -1,4 +1,4 @@
-import { ObserverRef, SubscriptionFunction } from "./types"
+import { ObserverRef, SubscriptionFunction, UnsubscribeHandler } from "./types"
 
 export interface Subscription<T> {
     ref: ObserverRef
@@ -9,7 +9,6 @@ export interface Subscription<T> {
     remove<U>(subscription: Subscription<U>): void
 }
 
-export type UnsubscribeHandler = () => boolean
 export interface SubscriptionConstructor {
     new <T>(_unsubscribe?: UnsubscribeHandler): Subscription<T>
 }

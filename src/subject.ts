@@ -3,10 +3,13 @@ import { Observer, ObserverLike } from "./observer";
 import { Subscribable, Subscription } from "./subscription";
 import { CompleteHandler, ErrorHandler, NextHandler } from "./types";
 
+type gaurdNever<T> = false extends isNever<T> ? [value: T] : [];
+type isNever<T> = T extends never ? true : false;
+
 export interface Subject<T> extends Subscribable<T> {
     close(): void
-    next(value: T): void
-    error(value: any): void
+    next(...values: gaurdNever<T>): void;
+    error(value?: any): void
     complete(final?: T): void
     asObservable(): Observer<T>
 }
@@ -24,14 +27,18 @@ export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike
         super()
         this.value = initial
     }
-
-    public next(value: T) {
+    // public next(): void
+    // public next(value: T): void
+    public next(...values: gaurdNever<T>) {
+        let value;
+        if (values.length === 0) this._context.update();
+        if (Array.isArray(values)) value = values[0];
         if (!this._context.active) return;
         this.value = value;
         this._context.update(value);
     }
 
-    public error(value: any) {
+    public error(value?: any) {
         if (!this._context.active) return;
         this.terminal = { type: 'error', value };
         this._context.error(value);
@@ -68,5 +75,6 @@ export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike
         return sub;
     }
 }
+
 
 export default Subject

@@ -1,5 +1,6 @@
 export * from './observer'
 export * from './subject'
+export * from './subscription'
 export * from './utils'
 export * from './pipes'
 export * from './types'
