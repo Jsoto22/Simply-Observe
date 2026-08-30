@@ -5,6 +5,8 @@ A lightweight, dependency-free reactive primitives library for TypeScript/JavaSc
 Inspired by RxJS, built from scratch with a smaller surface area, and no external dependencies.
  
 Originally built to share state between components in frameworks like React that have no built-in singleton or service pattern — a `Subject` created once and subscribed to from multiple components can sidestep complex prop drilling or managing Context entirely.
+
+Check out and follow [Simply Observe on GitHub](https://github.com/Jsoto22/Simply-Observe). Your support and feedback is always welcomed!
  
 ## Install
  
