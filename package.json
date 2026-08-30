@@ -1,6 +1,6 @@
 {
   "name": "simply-observe",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A lightweight, dependency-free reactive primitives library for TypeScript",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
