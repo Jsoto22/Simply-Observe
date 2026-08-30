@@ -27,8 +27,7 @@ export const Subject: SubjectConstructor = class Subject<T> extends ObserverLike
         super()
         this.value = initial
     }
-    // public next(): void
-    // public next(value: T): void
+
     public next(...values: gaurdNever<T>) {
         let value;
         if (values.length === 0) this._context.update();
