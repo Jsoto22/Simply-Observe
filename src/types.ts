@@ -2,7 +2,7 @@ import { Observer } from "./observer"
 import Subscription from "./subscription";
 
 export type Flat<T extends readonly unknown[]> = T extends [infer F, ...infer R] ? F extends readonly unknown[] ? [...F, ...Flat<R>] : [F, ...Flat<R>] : [];
-export type Pop<T extends readonly unknown[]> = T extends [...infer R, infer _] ? R : never;
+export type Pop<T extends readonly unknown[]> = T extends [...infer R, infer _] ? R : [];
 
 export type ObserverRef = ReturnType<Crypto["randomUUID"]>
 export type ObserverTaskFunction<T> = (...args: ObserverTaskParameters<T>) => any
